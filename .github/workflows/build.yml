@@ -1,0 +1,56 @@
+name: Build PS5DebugPlugin
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    strategy:
+      matrix:
+        platform: [x86, x64]
+
+    steps:
+      # Must land at path "ReClass.NET" so the plugin's relative project
+      # reference (..\ReClass.NET\ReClass.NET\ReClass.NET.csproj) resolves.
+      # We only need the ReClass.NET C# project itself, not its native/Linux
+      # core or launcher/tests projects, so pulling the repo as-is is fine -
+      # PS5DebugPlugin.sln references only ReClass.NET.csproj and will build
+      # it as a dependency; we never touch ReClass.NET.sln directly.
+      - name: Checkout ReClass.NET
+        uses: actions/checkout@v4
+        with:
+          repository: ReClassNET/ReClass.NET
+          path: ReClass.NET
+
+      # Sibling folder, named to match the plugin repo's own name.
+      - name: Checkout PS5DebugPlugin
+        uses: actions/checkout@v4
+        with:
+          path: ReClass.NET-PS5DebugPlugin
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Setup NuGet
+        uses: nuget/setup-nuget@v2
+
+      - name: Restore packages
+        run: nuget restore ReClass.NET-PS5DebugPlugin\PS5DebugPlugin.sln
+        shell: cmd
+
+      - name: Build plugin (and its ReClass.NET.csproj dependency)
+        run: msbuild ReClass.NET-PS5DebugPlugin\PS5DebugPlugin.sln /p:Configuration=Release /p:Platform=${{ matrix.platform }} /m
+        shell: cmd
+
+      - name: Upload build output
+        uses: actions/upload-artifact@v4
+        with:
+          name: PS5DebugPlugin-${{ matrix.platform }}
+          path: |
+            ReClass.NET-PS5DebugPlugin\bin\Release\**\PS5DebugPlugin.dll
+          if-no-files-found: error
